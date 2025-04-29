@@ -1,75 +1,121 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, redirect, jsonify
 import requests
+import base64
+from urllib.parse import urlencode
 from models import Bill
 from database import SessionLocal, engine, Base
 from datetime import datetime
-import json  # Needed to save line_items as JSON
 
 app = Flask(__name__)
-
-# Create tables if not exist
 Base.metadata.create_all(bind=engine)
 
-ACCESS_TOKEN = "eyJhbGciOiJkaXIiLCJlbmMiOiJBMTI4Q0JDLUhTMjU2IiwieC5vcmciOiJIMCJ9..NJa1Ti57t86mgF4E0lvfcA.97ibSbiN3RE_XSJJ3EDQsJDRsxsIt1tdYdUp5bM0dxvWXXzY1i44VO6-ADP8dUiYbvSxYuGNiS6KiWNgXmoYQVDNnPvzIzbPpzqYPUzeye0xb5hAoqpaE3-G8eTWyeDCh1Z9UJOMwKqDB29uVtBevBkfzuj_7PTgwlzDoANCZUG0rG4pqEkj_4rYM0QTbIYxpDaKgDx8We1V91z0rMrJU-FAPq7Y-hBN803bSjOeqbQEguISZJkHKX_kdOI8Ria_lV2xH6RfY3Ck3pcHQV9OPVlI4vB5r-effu2FD-u-2I4_49wUgyLJar5dFKY3ujg8VNJso3yjAgbrHxeORCcFcu52s5O-2hsuTNhi-iDVheLurid1PtEN90aLZ6Yn5N7-F1DVPG-RyJmI6qMvQHhJB7SabEhmLSYOpr9Ie0dr0E4BcBCstrzgCTbEUMww0yUqDU8MZ2J-pgA3p5PY5u7hPfS_izCwSrw2a_am0d9pU_A.gF2cwKpX010bk5efdieQ1Q"
+# Replace with your actual credentials
+CLIENT_ID = "ABiHWaO5C05yuxL0mv0QL5rzC0z1RDvfoAVB2xMV64G3YgEmfv"
+CLIENT_SECRET = "VZD28FlMtQ6K914rMnKAuoA3bd5lSac6M7Ctle65"
+REDIRECT_URI = "http://localhost:5000/callback"  # Update to match your actual callback
 REALM_ID = "9341454578080950"
 
-@app.route('/fetch-bills')
+auth_base_url = "https://appcenter.intuit.com/connect/oauth2"
+token_url = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
+
+access_token = None  # Stored in memory (for demo)
+
+@app.route("/")
+def home():
+    return "🚀 QuickBooks OAuth Demo"
+
+@app.route("/fetch-bills")
 def fetch_bills():
+    global access_token
+
+    if not access_token:
+        return redirect_to_authorization()
+
     url = f"https://sandbox-quickbooks.api.intuit.com/v3/company/{REALM_ID}/query"
-    query = "select * from Bill"
     headers = {
-        "Authorization": f"Bearer {ACCESS_TOKEN}",
+        "Authorization": f"Bearer {access_token}",
         "Accept": "application/json",
         "Content-Type": "application/text"
     }
+    query = "SELECT * FROM Bill"
 
     response = requests.post(url, headers=headers, data=query)
+    if response.status_code != 200:
+        return f"❌ Error: {response.text}", response.status_code
 
+    data = response.json()
+    bills = data.get("QueryResponse", {}).get("Bill", [])
+    
+    db = SessionLocal()
+    for item in bills:
+        bill = Bill(
+            bill_id=item.get("Id"),
+            sync_token=item.get("SyncToken"),
+            domain=item.get("domain"),
+            ap_account_name=item.get("APAccountRef", {}).get("name"),
+            ap_account_value=item.get("APAccountRef", {}).get("value"),
+            vendor_name=item.get("VendorRef", {}).get("name"),
+            vendor_id=item.get("VendorRef", {}).get("value"),
+            txn_date=datetime.fromisoformat(item.get("TxnDate")) if item.get("TxnDate") else None,
+            due_date=datetime.fromisoformat(item.get("DueDate")) if item.get("DueDate") else None,
+            total_amt=item.get("TotalAmt"),
+            balance=item.get("Balance"),
+            currency_name=item.get("CurrencyRef", {}).get("name"),
+            currency_value=item.get("CurrencyRef", {}).get("value"),
+            linked_txn=item.get("LinkedTxn"),
+            sales_term_ref=item.get("SalesTermRef", {}).get("value") if item.get("SalesTermRef") else None,
+            line_items=item.get("Line"),
+            meta_create_time=item.get("MetaData", {}).get("CreateTime"),
+            meta_last_updated_time=item.get("MetaData", {}).get("LastUpdatedTime")
+        )
+        # Avoid duplicate insertions (e.g., using bill_id)
+        existing = db.query(Bill).filter_by(bill_id=bill.bill_id).first()
+        if not existing:
+            db.add(bill)
+
+    db.commit()
+    db.close()
+
+    return jsonify({"message": f"{len(bills)} bills fetched and stored successfully."})
+
+
+@app.route("/callback")
+def callback():
+    global access_token
+
+    auth_code = request.args.get("code")
+    if not auth_code:
+        return "No auth code received", 400
+
+    basic_auth = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
+
+    headers = {
+        "Authorization": f"Basic {basic_auth}",
+        "Accept": "application/json",
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+    data = {
+        "grant_type": "authorization_code",
+        "code": auth_code,
+        "redirect_uri": REDIRECT_URI
+    }
+
+    response = requests.post(token_url, headers=headers, data=urlencode(data))
     if response.status_code == 200:
-        data = response.json()
-        print("Fetched Data:", json.dumps(data, indent=2))  # Pretty print JSON
-        
-        bills_data = data.get('QueryResponse', {}).get('Bill', [])
-        db = SessionLocal()
+        tokens = response.json()
+        access_token = tokens["access_token"]
+        return redirect("/fetch-bills")
+    return f"Failed to get tokens: {response.text}", 400
 
-        for bill in bills_data:
-            existing_bill = db.query(Bill).filter(Bill.bill_id == bill['Id']).first()
-            if existing_bill:
-                continue
-
-            new_bill = Bill(
-                bill_id = bill['Id'],
-                sync_token = bill.get('SyncToken'),
-                domain = bill.get('domain'),
-                ap_account_name = bill.get('APAccountRef', {}).get('name'),
-                ap_account_value = bill.get('APAccountRef', {}).get('value'),
-                vendor_name = bill.get('VendorRef', {}).get('name'),
-                vendor_id = bill.get('VendorRef', {}).get('value'),
-                txn_date = datetime.strptime(bill['TxnDate'], '%Y-%m-%d') if 'TxnDate' in bill else None,
-                due_date = datetime.strptime(bill['DueDate'], '%Y-%m-%d') if 'DueDate' in bill else None,
-                total_amt = bill.get('TotalAmt'),
-                balance = bill.get('Balance', 0),
-                currency_name = bill.get('CurrencyRef', {}).get('name'),
-                currency_value = bill.get('CurrencyRef', {}).get('value'),
-                linked_txn = bill.get('LinkedTxn'),
-                sales_term_ref = bill.get('SalesTermRef', {}).get('value') if bill.get('SalesTermRef') else None,
-                line_items = bill.get('Line'),
-                meta_create_time = bill.get('MetaData', {}).get('CreateTime'),
-                meta_last_updated_time = bill.get('MetaData', {}).get('LastUpdatedTime')
-            )
-
-            db.add(new_bill)
-        
-        db.commit()
-        db.close()
-        return "Bills fetched and stored successfully ✅"
-    else:
-        print(f"Error response: {response.text}")
-        return f"Error fetching bills: {response.text}", 400
-
-@app.route('/')
-def home():
-    return "Hello Harsh! Flask app is running 🚀"
+def redirect_to_authorization():
+    query_params = urlencode({
+        "client_id": CLIENT_ID,
+        "redirect_uri": REDIRECT_URI,
+        "response_type": "code",
+        "scope": "com.intuit.quickbooks.accounting openid profile email phone address",
+        "state": "testState"
+    })
+    return redirect(f"{auth_base_url}?{query_params}")
 
 if __name__ == "__main__":
     app.run(debug=True)
