@@ -2,23 +2,22 @@ from flask import Flask, request, redirect, jsonify
 import requests
 import base64
 from urllib.parse import urlencode
-from models import Bill
+from models import Bill, Vendor, Currency, VendorAddress, BillMetaData, BillLineItem
 from database import SessionLocal, engine, Base
 from datetime import datetime
 
 app = Flask(__name__)
 Base.metadata.create_all(bind=engine)
 
-# Replace with your actual credentials
 CLIENT_ID = "ABiHWaO5C05yuxL0mv0QL5rzC0z1RDvfoAVB2xMV64G3YgEmfv"
 CLIENT_SECRET = "VZD28FlMtQ6K914rMnKAuoA3bd5lSac6M7Ctle65"
-REDIRECT_URI = "http://localhost:5000/callback"  # Update to match your actual callback
+REDIRECT_URI = "http://localhost:5000/callback"
 REALM_ID = "9341454578080950"
 
 auth_base_url = "https://appcenter.intuit.com/connect/oauth2"
 token_url = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
 
-access_token = None  # Stored in memory (for demo)
+access_token = None
 
 @app.route("/")
 def home():
@@ -27,6 +26,7 @@ def home():
 @app.route("/fetch-bills")
 def fetch_bills():
     global access_token
+    count = int(request.args.get("count", 0))
 
     if not access_token:
         return redirect_to_authorization()
@@ -38,52 +38,111 @@ def fetch_bills():
         "Content-Type": "application/text"
     }
     query = "SELECT * FROM Bill"
-
     response = requests.post(url, headers=headers, data=query)
+
     if response.status_code != 200:
         return f"❌ Error: {response.text}", response.status_code
 
-    data = response.json()
-    bills = data.get("QueryResponse", {}).get("Bill", [])
-    
+    # print(response.json())
+    bills_data = response.json().get("QueryResponse", {}).get("Bill", [])
+
+    if count > len(bills_data):
+        return jsonify({"error": "Requested number exceeds available data."}), 400
+
     db = SessionLocal()
-    for item in bills:
-        bill = Bill(
-            bill_id=item.get("Id"),
-            sync_token=item.get("SyncToken"),
-            domain=item.get("domain"),
-            ap_account_name=item.get("APAccountRef", {}).get("name"),
-            ap_account_value=item.get("APAccountRef", {}).get("value"),
-            vendor_name=item.get("VendorRef", {}).get("name"),
-            vendor_id=item.get("VendorRef", {}).get("value"),
-            txn_date=datetime.fromisoformat(item.get("TxnDate")) if item.get("TxnDate") else None,
-            due_date=datetime.fromisoformat(item.get("DueDate")) if item.get("DueDate") else None,
-            total_amt=item.get("TotalAmt"),
-            balance=item.get("Balance"),
-            currency_name=item.get("CurrencyRef", {}).get("name"),
-            currency_value=item.get("CurrencyRef", {}).get("value"),
-            linked_txn=item.get("LinkedTxn"),
-            sales_term_ref=item.get("SalesTermRef", {}).get("value") if item.get("SalesTermRef") else None,
-            line_items=item.get("Line"),
-            meta_create_time=item.get("MetaData", {}).get("CreateTime"),
-            meta_last_updated_time=item.get("MetaData", {}).get("LastUpdatedTime")
-        )
-        # Avoid duplicate insertions (e.g., using bill_id)
-        existing = db.query(Bill).filter_by(bill_id=bill.bill_id).first()
-        if not existing:
+    try:
+        print(bills_data[:count])
+        for item in bills_data[:count]:
+            print(item)
+            if db.query(Bill).filter_by(bill_id=item.get("Id")).first():
+                continue
+
+            # Vendor
+            vendor_ref = item.get("VendorRef", {})
+            vendor = db.query(Vendor).filter_by(vendor_ref=vendor_ref.get("value")).first()
+            if not vendor and vendor_ref.get("value"):
+                vendor = Vendor(name=vendor_ref.get("name"), vendor_ref=vendor_ref.get("value"))
+                db.add(vendor)
+                db.flush()
+
+            # Vendor Address
+            addr = item.get("VendorAddr")
+            if addr and vendor:
+                if not db.query(VendorAddress).filter_by(vendor_id=vendor.id).first():
+                    vendor_address = VendorAddress(
+                        vendor_id=vendor.id,
+                        line1=addr.get("Line1"),
+                        city=addr.get("City"),
+                        country_sub_division_code=addr.get("CountrySubDivisionCode"),
+                        postal_code=addr.get("PostalCode"),
+                        lat=addr.get("Lat"),
+                        long=addr.get("Long")
+                    )
+                    db.add(vendor_address)
+
+            # Currency
+            currency_ref = item.get("CurrencyRef", {})
+            currency = db.query(Currency).filter_by(value=currency_ref.get("value")).first()
+            if not currency and currency_ref.get("value"):
+                currency = Currency(name=currency_ref.get("name"), value=currency_ref.get("value"))
+                db.add(currency)
+                db.flush()
+
+            # Bill
+            bill = Bill(
+                bill_id=item.get("Id"),
+                txn_date=datetime.fromisoformat(item.get("TxnDate")) if item.get("TxnDate") else None,
+                due_date=datetime.fromisoformat(item.get("DueDate")) if item.get("DueDate") else None,
+                total_amt=item.get("TotalAmt"),
+                balance=item.get("Balance"),
+                vendor_id=vendor.id if vendor else None,
+                currency_id=currency.id if currency else None
+            )
             db.add(bill)
+            db.flush()
 
-    db.commit()
-    db.close()
+            # MetaData
+            meta = item.get("MetaData", {})
+            if meta:
+                meta_record = BillMetaData(
+                    bill_id=bill.id,
+                    create_time=datetime.fromisoformat(meta.get("CreateTime")),
+                    last_updated_time=datetime.fromisoformat(meta.get("LastUpdatedTime")),
+                    last_modified_by=meta.get("LastModifiedByRef", {}).get("value")
+                )
+                db.add(meta_record)
 
-    return jsonify({"message": f"{len(bills)} bills fetched and stored successfully."})
+            # Line Items
+            for line in item.get("Line", []):
+                detail = line.get("ItemBasedExpenseLineDetail", {})
+                line_item = BillLineItem(
+                    bill_id=bill.id,
+                    line_num=line.get("LineNum"),
+                    description=line.get("Description"),
+                    amount=line.get("Amount"),
+                    item_name=detail.get("ItemRef", {}).get("name"),
+                    item_ref=detail.get("ItemRef", {}).get("value"),
+                    qty=detail.get("Qty"),
+                    unit_price=detail.get("UnitPrice"),
+                    billable_status=detail.get("BillableStatus"),
+                    tax_code=detail.get("TaxCodeRef", {}).get("value")
+                )
+                db.add(line_item)
 
+        db.commit()
+        return jsonify({"message": f"{count} bills fetched and stored."})
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
 
 @app.route("/callback")
 def callback():
     global access_token
-
     auth_code = request.args.get("code")
+    state = request.args.get("state", "0")  # 'state' carries the count
+
     if not auth_code:
         return "No auth code received", 400
 
@@ -104,18 +163,20 @@ def callback():
     if response.status_code == 200:
         tokens = response.json()
         access_token = tokens["access_token"]
-        return redirect("/fetch-bills")
+        return redirect(f"/fetch-bills?count={state}")  # Pass count back
     return f"Failed to get tokens: {response.text}", 400
 
+
 def redirect_to_authorization():
+    count = request.args.get("count", "0")
     query_params = urlencode({
         "client_id": CLIENT_ID,
         "redirect_uri": REDIRECT_URI,
         "response_type": "code",
         "scope": "com.intuit.quickbooks.accounting openid profile email phone address",
-        "state": "testState"
+        "state": count  # Save count in state
     })
     return redirect(f"{auth_base_url}?{query_params}")
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, host="localhost", port=5000)

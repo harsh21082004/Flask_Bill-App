@@ -1,0 +1,77 @@
+[
+    {'DueDate': '2025-03-31', 'VendorAddr': {'Id': '40', 'Line1': '4528 Country Road', 'City': 'Middlefield', 'CountrySubDivisionCode': 'CA', 'PostalCode': '94303', 'Lat': '37.3752919', 'Long': '-122.1692159'
+        }, 'Balance': 205.0, 'domain': 'QBO', 'sparse': False, 'Id': '126', 'SyncToken': '0', 'MetaData': {'CreateTime': '2025-03-31T13: 10: 36-07: 00', 'LastModifiedByRef': {'value': '9341454578080981'
+            }, 'LastUpdatedTime': '2025-03-31T13: 10: 36-07: 00'
+        }, 'TxnDate': '2025-03-31', 'CurrencyRef': {'value': 'USD', 'name': 'United States Dollar'
+        }, 'Line': [
+            {'Id': '1', 'LineNum': 1, 'Description': 'Fountain Pump', 'Amount': 80.0, 'LinkedTxn': [], 'DetailType': 'ItemBasedExpenseLineDetail', 'ItemBasedExpenseLineDetail': {'BillableStatus': 'NotBillable', 'ItemRef': {'value': '11', 'name': 'Pump'
+                    }, 'UnitPrice': 10, 'Qty': 8, 'TaxCodeRef': {'value': 'NON'
+                    }
+                }
+            },
+            {'Id': '2', 'LineNum': 2, 'Description': 'Rock Fountain', 'Amount': 125.0, 'LinkedTxn': [], 'DetailType': 'ItemBasedExpenseLineDetail', 'ItemBasedExpenseLineDetail': {'BillableStatus': 'NotBillable', 'ItemRef': {'value': '5', 'name': 'Rock Fountain'
+                    }, 'UnitPrice': 125, 'Qty': 1, 'TaxCodeRef': {'value': 'NON'
+                    }
+                }
+            }
+        ], 'VendorRef': {'value': '46', 'name': 'Norton Lumber and Building Materials'
+        }, 'APAccountRef': {'value': '33', 'name': 'Accounts Payable (A/P)'
+        }, 'TotalAmt': 205.0
+    },
+    {'SalesTermRef': {'value': '3'
+        }, 'DueDate': '2025-04-27', 'VendorAddr': {'Id': '40', 'Line1': '4528 Country Road', 'City': 'Middlefield', 'CountrySubDivisionCode': 'CA', 'PostalCode': '94303', 'Lat': '37.3752919', 'Long': '-122.1692159'
+        }, 'Balance': 0, 'domain': 'QBO', 'sparse': False, 'Id': '25', 'SyncToken': '1', 'MetaData': {'CreateTime': '2025-03-28T15: 37: 25-07: 00', 'LastModifiedByRef': {'value': '9341454578080981'
+            }, 'LastUpdatedTime': '2025-03-31T12: 56: 17-07: 00'
+        }, 'TxnDate': '2025-03-28', 'CurrencyRef': {'value': 'USD', 'name': 'United States Dollar'
+        }, 'LinkedTxn': [
+            {'TxnId': '118', 'TxnType': 'BillPaymentCheck'
+            },
+            {'TxnId': '26', 'TxnType': 'ReimburseCharge'
+            }
+        ], 'Line': [
+            {'Id': '1', 'LineNum': 1, 'Description': 'Lumber', 'Amount': 103.55, 'LinkedTxn': [
+                    {'TxnId': '26', 'TxnType': 'ReimburseCharge'
+                    }
+                ], 'DetailType': 'AccountBasedExpenseLineDetail', 'AccountBasedExpenseLineDetail': {'CustomerRef': {'value': '26', 'name': 'Travis Waldron'
+                    }, 'AccountRef': {'value': '64', 'name': 'Job Expenses:Job Materials:Decks and Patios'
+                    }, 'BillableStatus': 'HasBeenBilled', 'TaxCodeRef': {'value': 'NON'
+                    }
+                }
+            }
+        ], 'VendorRef': {'value': '46', 'name': 'Norton Lumber and Building Materials'
+        }, 'APAccountRef': {'value': '33', 'name': 'Accounts Payable (A/P)'
+        }, 'TotalAmt': 103.55
+    },
+    {'SalesTermRef': {'value': '1'
+        }, 'DueDate': '2025-02-13', 'VendorAddr': {'Id': '33', 'Line1': '10 Main St.', 'City': 'Palo Alto', 'CountrySubDivisionCode': 'CA', 'PostalCode': '94303', 'Lat': '37.445013', 'Long': '-122.1391443'
+        }, 'Balance': 0, 'domain': 'QBO', 'sparse': False, 'Id': '105', 'SyncToken': '1', 'MetaData': {'CreateTime': '2025-03-30T13: 43: 56-07: 00', 'LastModifiedByRef': {'value': '9341454578080981'
+            }, 'LastUpdatedTime': '2025-03-31T12: 55: 23-07: 00'
+        }, 'TxnDate': '2025-02-13', 'CurrencyRef': {'value': 'USD', 'name': 'United States Dollar'
+        }, 'LinkedTxn': [
+            {'TxnId': '117', 'TxnType': 'BillPaymentCheck'
+            }
+        ], 'Line': [
+            {'Id': '1', 'LineNum': 1, 'Amount': 56.5, 'LinkedTxn': [], 'DetailType': 'AccountBasedExpenseLineDetail', 'AccountBasedExpenseLineDetail': {'AccountRef': {'value': '77', 'name': 'Utilities:Telephone'
+                    }, 'BillableStatus': 'NotBillable', 'TaxCodeRef': {'value': 'NON'
+                    }
+                }
+            }
+        ], 'VendorRef': {'value': '32', 'name': 'Cal Telephone'
+        }, 'APAccountRef': {'value': '33', 'name': 'Accounts Payable (A/P)'
+        }, 'TotalAmt': 56.5
+    },
+    {'DueDate': '2025-03-31', 'VendorAddr': {'Id': '43', 'Line1': 'P.O. Box 147', 'City': 'Bayshore', 'CountrySubDivisionCode': 'CA', 'PostalCode': '94326', 'Lat': '45.2720537', 'Long': '-79.7935909'
+        }, 'Balance': 315.0, 'domain': 'QBO', 'sparse': False, 'Id': '108', 'SyncToken': '0', 'MetaData': {'CreateTime': '2025-03-31T12: 36: 59-07: 00', 'LastModifiedByRef': {'value': '9341454578080981'
+            }, 'LastUpdatedTime': '2025-03-31T12: 36: 59-07: 00'
+        }, 'TxnDate': '2025-03-31', 'CurrencyRef': {'value': 'USD', 'name': 'United States Dollar'
+        }, 'Line': [
+            {'Id': '1', 'LineNum': 1, 'Amount': 315.0, 'LinkedTxn': [], 'DetailType': 'AccountBasedExpenseLineDetail', 'AccountBasedExpenseLineDetail': {'AccountRef': {'value': '69', 'name': 'Legal & Professional Fees:Accounting'
+                    }, 'BillableStatus': 'NotBillable', 'TaxCodeRef': {'value': 'NON'
+                    }
+                }
+            }
+        ], 'VendorRef': {'value': '49', 'name': 'Robertson & Associates'
+        }, 'APAccountRef': {'value': '33', 'name': 'Accounts Payable (A/P)'
+        }, 'TotalAmt': 315.0
+    }
+]
