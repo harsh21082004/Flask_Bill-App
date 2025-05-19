@@ -2,12 +2,12 @@ from flask import Flask, request, redirect, jsonify
 import requests
 import base64
 from urllib.parse import urlencode
-from models import Bill, Vendor, Currency, VendorAddress, BillMetaData, BillLineItem
-from database import SessionLocal, engine, Base
 from datetime import datetime
 
+from models import Bill, Vendor, Currency, VendorAddress, BillMetaData, BillLineItem
+from database import SessionLocal, engine
+
 app = Flask(__name__)
-Base.metadata.create_all(bind=engine)
 
 CLIENT_ID = "ABiHWaO5C05yuxL0mv0QL5rzC0z1RDvfoAVB2xMV64G3YgEmfv"
 CLIENT_SECRET = "VZD28FlMtQ6K914rMnKAuoA3bd5lSac6M7Ctle65"
@@ -43,7 +43,6 @@ def fetch_bills():
     if response.status_code != 200:
         return f"❌ Error: {response.text}", response.status_code
 
-    # print(response.json())
     bills_data = response.json().get("QueryResponse", {}).get("Bill", [])
 
     if count > len(bills_data):
@@ -51,13 +50,10 @@ def fetch_bills():
 
     db = SessionLocal()
     try:
-        print(bills_data[:count])
         for item in bills_data[:count]:
-            print(item)
             if db.query(Bill).filter_by(bill_id=item.get("Id")).first():
                 continue
 
-            # Vendor
             vendor_ref = item.get("VendorRef", {})
             vendor = db.query(Vendor).filter_by(vendor_ref=vendor_ref.get("value")).first()
             if not vendor and vendor_ref.get("value"):
@@ -65,7 +61,6 @@ def fetch_bills():
                 db.add(vendor)
                 db.flush()
 
-            # Vendor Address
             addr = item.get("VendorAddr")
             if addr and vendor:
                 if not db.query(VendorAddress).filter_by(vendor_id=vendor.id).first():
@@ -80,7 +75,6 @@ def fetch_bills():
                     )
                     db.add(vendor_address)
 
-            # Currency
             currency_ref = item.get("CurrencyRef", {})
             currency = db.query(Currency).filter_by(value=currency_ref.get("value")).first()
             if not currency and currency_ref.get("value"):
@@ -88,7 +82,6 @@ def fetch_bills():
                 db.add(currency)
                 db.flush()
 
-            # Bill
             bill = Bill(
                 bill_id=item.get("Id"),
                 txn_date=datetime.fromisoformat(item.get("TxnDate")) if item.get("TxnDate") else None,
@@ -101,7 +94,6 @@ def fetch_bills():
             db.add(bill)
             db.flush()
 
-            # MetaData
             meta = item.get("MetaData", {})
             if meta:
                 meta_record = BillMetaData(
@@ -112,7 +104,6 @@ def fetch_bills():
                 )
                 db.add(meta_record)
 
-            # Line Items
             for line in item.get("Line", []):
                 detail = line.get("ItemBasedExpenseLineDetail", {})
                 line_item = BillLineItem(
@@ -141,7 +132,7 @@ def fetch_bills():
 def callback():
     global access_token
     auth_code = request.args.get("code")
-    state = request.args.get("state", "0")  # 'state' carries the count
+    state = request.args.get("state", "0")
 
     if not auth_code:
         return "No auth code received", 400
@@ -163,9 +154,8 @@ def callback():
     if response.status_code == 200:
         tokens = response.json()
         access_token = tokens["access_token"]
-        return redirect(f"/fetch-bills?count={state}")  # Pass count back
+        return redirect(f"/fetch-bills?count={state}")
     return f"Failed to get tokens: {response.text}", 400
-
 
 def redirect_to_authorization():
     count = request.args.get("count", "0")
@@ -174,7 +164,7 @@ def redirect_to_authorization():
         "redirect_uri": REDIRECT_URI,
         "response_type": "code",
         "scope": "com.intuit.quickbooks.accounting openid profile email phone address",
-        "state": count  # Save count in state
+        "state": count
     })
     return redirect(f"{auth_base_url}?{query_params}")
 
