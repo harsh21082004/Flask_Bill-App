@@ -22,7 +22,7 @@ class VendorAddress(Base):
     country_sub_division_code = Column(String(10))
     postal_code = Column(String(20))
     lat = Column(String(50))
-    long = Column(String(50))
+    lon = Column(String(50))
 
     vendor = relationship("Vendor", back_populates="address")
 
@@ -94,7 +94,7 @@ class CustomerAddress(Base):
     country_sub_division_code = Column(String(10))
     postal_code = Column(String(20))
     lat = Column(String(50))
-    long = Column(String(50))
+    lon = Column(String(50))
 
     customer = relationship("Customer", back_populates="bill_addr") # Assuming BillAddr for now
 

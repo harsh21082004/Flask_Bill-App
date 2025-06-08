@@ -492,7 +492,7 @@ def fetch_and_save_customers_worker():
                 customer.bill_addr.country_sub_division_code = bill_addr_data.get("CountrySubDivisionCode")
                 customer.bill_addr.postal_code = bill_addr_data.get("PostalCode")
                 customer.bill_addr.lat = bill_addr_data.get("Lat")
-                customer.bill_addr.long = bill_addr_data.get("Long")
+                customer.bill_addr.lon = bill_addr_data.get("Lon")
 
             # MetaData
             meta_data_json = c_data.get("MetaData")
