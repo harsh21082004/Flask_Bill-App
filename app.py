@@ -1,4 +1,4 @@
-from flask import Flask, request, redirect, render_template, session, url_for
+from flask import Flask, request, redirect, render_template, session, url_for, flash
 import os
 import requests
 import base64
@@ -250,8 +250,15 @@ def fetch_and_save_worker():
         session[LAST_BILL_FETCH_COUNT_KEY] = fetch_count 
     finally:
         db.close()
+    
+    if num_fetched < fetch_count:
+        flash(f"Fetched all remaining bills. {num_fetched} bill(s) added.", "info")
+        session[QB_BILL_NEXT_START_POSITION_KEY] = -1 # Indicate no more to fetch
+    elif num_fetched == 0 and qb_start_position > 1:
+        flash("No more bills to fetch from QuickBooks.", "info")
+        session[QB_BILL_NEXT_START_POSITION_KEY] = -1 # Indicate no more to fetch
 
-    return redirect(url_for("home", count=display_count, start=display_start))
+    return redirect(url_for("home", count=display_count, start=display_start, customer_count=request.args.get("customer_count", 5), customer_start=request.args.get("customer_start", 0)))
 
 
 @app.route("/callback")
@@ -511,7 +518,13 @@ def fetch_and_save_customers_worker():
     # So, we might just redirect to the first page of bills, or try to preserve it if it was in the state.
     # The display_count and display_start from the worker are for the customers.
     # We need to decide what the bill pagination should be.
-    return redirect(url_for("home_customers", customer_count=display_count, customer_start=display_start, count=5, start=0)) # Default bill pagination
+    if num_fetched < fetch_count:
+        flash(f"Fetched all remaining customers. {num_fetched} customer(s) added.", "info")
+        session[QB_CUSTOMER_NEXT_START_POSITION_KEY] = -1 # Indicate no more to fetch
+    elif num_fetched == 0 and qb_start_position > 1:
+        flash("No more customers to fetch from QuickBooks.", "info")
+        session[QB_CUSTOMER_NEXT_START_POSITION_KEY] = -1 # Indicate no more to fetch
+    return redirect(url_for("home_customers", customer_count=display_count, customer_start=display_start, count=request.args.get("count",5), start=request.args.get("start",0)))
 
 
 

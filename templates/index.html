@@ -8,6 +8,15 @@
 
 <body>
     <h1>QuickBooks Bills</h1>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <ul class=flashes>
+            {% for category, message in messages %}
+                <li class="{{ category }}">{{ message }}</li>
+            {% endfor %}
+            </ul>
+        {% endif %}
+    {% endwith %}
     <p><a href="{{ url_for('home_customers') }}">View Customers</a></p>
 
     <hr>
@@ -22,8 +31,10 @@
         <button type="submit">Fetch Initial Batch from QuickBooks</button>
     </form>
 
-    <a href="{{ url_for('fetch_next_batch_controller', current_display_count=count | default(5), current_display_start=start | default(0) ) }}">Fetch Next Bill Batch ({{ last_fetch_count | default(10) }}) from QuickBooks</a>
-    <p>Next QB Bill Start Position: {{ next_qb_bill_start_pos | default('N/A') }}</p> {# For bills #}
+    {% if session.get('qb_bill_next_start_position', 1) != -1 %}
+        <a href="{{ url_for('fetch_next_batch_controller', current_display_count=count | default(5), current_display_start=start | default(0), customer_count=customer_count | default(5), customer_start=customer_start | default(0) ) }}">Fetch Next Bill Batch ({{ last_fetch_count | default(10) }}) from QuickBooks</a>
+        <p>Next QB Bill Start Position: {{ session.get('qb_bill_next_start_position', 1) }}</p> {# For bills #}
+    {% endif %}
     <hr>
 
     {% if bills %}
@@ -72,18 +83,6 @@
     <h1>QuickBooks Customers</h1>
      <p><a href="{{ url_for('home') }}">View Bills</a></p>
 
-    <form method="POST" action="{{ url_for('home_customers') }}">
-        <label>
-            Customers per Page:
-            <input type="number" name="count" value="{{ customer_count | default(5) }}" required>
-        </label>
-        <label>
-            Start Index:
-            <input type="number" name="start" value="{{ customer_start | default(0) }}" required>
-        </label>
-        <button type="submit">Apply Customer Pagination</button>
-    </form>
-
     <hr>
 
     <form method="POST" action="{{ url_for('initiate_fetch_customers_controller') }}" style="margin-bottom: 10px;">
@@ -96,8 +95,10 @@
         <button type="submit">Fetch Initial Customer Batch from QuickBooks</button>
     </form>
 
-    <a href="{{ url_for('fetch_next_batch_customers_controller', current_customer_display_count=customer_count | default(5), current_customer_display_start=customer_start | default(0)) }}">Fetch Next Customer Batch ({{ last_customer_fetch_count | default(10) }}) from QuickBooks</a>
-    <p>Next QB Customer Start Position: {{ next_qb_customer_start_pos | default('N/A') }}</p>
+    {% if session.get('qb_customer_next_start_position', 1) != -1 %}
+        <a href="{{ url_for('fetch_next_batch_customers_controller', current_customer_display_count=customer_count | default(5), current_customer_display_start=customer_start | default(0), count=count | default(5), start=start | default(0)) }}">Fetch Next Customer Batch ({{ last_customer_fetch_count | default(10) }}) from QuickBooks</a>
+        <p>Next QB Customer Start Position: {{ session.get('qb_customer_next_start_position', 1) }}</p>
+    {% endif %}
     <hr>
 
     {% if customers and customers|length > 0 %} {# Added a check for non-empty list #}
