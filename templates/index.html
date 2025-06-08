@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Bills Pagination</title>
+</head>
+
+<body>
+    <h1>QuickBooks Bills</h1>
+
+    <hr>
+
+    <form method="POST" action="{{ url_for('initiate_fetch_controller') }}" style="margin-bottom: 10px;">
+        <label>
+            Number of Bills to Fetch from QB:
+            <input type="number" name="fetch_count" value="{{ last_fetch_count | default(10) }}" min="1" required>
+        </label>
+        <input type="hidden" name="current_display_count" value="{{ count }}">
+        <input type="hidden" name="current_display_start" value="{{ start }}">
+        <button type="submit">Fetch Initial Batch from QuickBooks</button>
+    </form>
+
+    <a href="{{ url_for('fetch_next_batch_controller', current_display_count=count, current_display_start=start) }}">Fetch Next Batch ({{ last_fetch_count | default(10) }}) from QuickBooks</a>
+
+    <hr>
+
+    {% if bills %}
+    <h2>Showing Bills</h2>
+    <table border="1" cellpadding="5" cellspacing="0">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Txn Date</th>
+                <th>Vendor</th>
+                <th>Total Amt</th>
+                <th>Balance</th>
+                <th>Currency</th>
+                <th>Create Time</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for bill in bills %}
+            <tr>
+                <td>{{ bill.bill_id }}</td> {# Displaying QBO Bill ID #}
+                <td>{{ bill.txn_date.strftime('%Y-%m-%d') if bill.txn_date else '' }}</td>
+                <td>{{ bill.vendor.name if bill.vendor else '' }}</td>
+                <td>{{ bill.total_amt }}</td>
+                <td>{{ bill.balance }}</td>
+                <td>{{ bill.currency.value if bill.currency else '' }}</td>
+                <td>{{ bill.bill_metadata.create_time.strftime('%Y-%m-%d %H:%M:%S') if bill.bill_metadata and bill.bill_metadata.create_time else '' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="pagination">
+        {% if has_prev %}
+        <a href="{{ url_for('home', start=start - count, count=count) }}">← Prev</a>
+        {% endif %}
+        {% if has_more %}
+        <a href="{{ url_for('home', start=start + count, count=count) }}">Next →</a>
+        {% endif %}
+    </div>
+
+    {% else %}
+    <p>No bills to display. Try fetching some from QuickBooks.</p>
+    {% endif %}
+</body>
+
+</html>
