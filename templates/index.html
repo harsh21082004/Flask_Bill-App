@@ -8,21 +8,22 @@
 
 <body>
     <h1>QuickBooks Bills</h1>
+    <p><a href="{{ url_for('home_customers') }}">View Customers</a></p>
 
     <hr>
 
     <form method="POST" action="{{ url_for('initiate_fetch_controller') }}" style="margin-bottom: 10px;">
         <label>
             Number of Bills to Fetch from QB:
-            <input type="number" name="fetch_count" value="{{ last_fetch_count | default(10) }}" min="1" required>
+            <input type="number" name="fetch_count" value="{{ last_fetch_count | default(10) }}" min="1" required> {# This is for bills #}
         </label>
-        <input type="hidden" name="current_display_count" value="{{ count }}">
-        <input type="hidden" name="current_display_start" value="{{ start }}">
+        <input type="hidden" name="current_display_count" value="{{ count | default(5) }}">
+        <input type="hidden" name="current_display_start" value="{{ start | default(0) }}">
         <button type="submit">Fetch Initial Batch from QuickBooks</button>
     </form>
 
-    <a href="{{ url_for('fetch_next_batch_controller', current_display_count=count, current_display_start=start) }}">Fetch Next Batch ({{ last_fetch_count | default(10) }}) from QuickBooks</a>
-
+    <a href="{{ url_for('fetch_next_batch_controller', current_display_count=count | default(5), current_display_start=start | default(0) ) }}">Fetch Next Bill Batch ({{ last_fetch_count | default(10) }}) from QuickBooks</a>
+    <p>Next QB Bill Start Position: {{ next_qb_bill_start_pos | default('N/A') }}</p> {# For bills #}
     <hr>
 
     {% if bills %}
@@ -56,10 +57,10 @@
 
     <div class="pagination">
         {% if has_prev %}
-        <a href="{{ url_for('home', start=start - count, count=count) }}">← Prev</a>
+        <a href="{{ url_for('home', start=start - count, count=count, customer_start=customer_start, customer_count=customer_count) }}">← Prev</a>
         {% endif %}
         {% if has_more %}
-        <a href="{{ url_for('home', start=start + count, count=count) }}">Next →</a>
+        <a href="{{ url_for('home', start=start + count, count=count, customer_start=customer_start, customer_count=customer_count) }}">Next →</a>
         {% endif %}
     </div>
 
@@ -67,5 +68,78 @@
     <p>No bills to display. Try fetching some from QuickBooks.</p>
     {% endif %}
 </body>
+    <hr style="margin-top: 30px; margin-bottom: 30px;">
+    <h1>QuickBooks Customers</h1>
+     <p><a href="{{ url_for('home') }}">View Bills</a></p>
+
+    <form method="POST" action="{{ url_for('home_customers') }}">
+        <label>
+            Customers per Page:
+            <input type="number" name="count" value="{{ customer_count | default(5) }}" required>
+        </label>
+        <label>
+            Start Index:
+            <input type="number" name="start" value="{{ customer_start | default(0) }}" required>
+        </label>
+        <button type="submit">Apply Customer Pagination</button>
+    </form>
+
+    <hr>
+
+    <form method="POST" action="{{ url_for('initiate_fetch_customers_controller') }}" style="margin-bottom: 10px;">
+        <label>
+            Number of Customers to Fetch from QB:
+            <input type="number" name="fetch_customer_count" value="{{ last_customer_fetch_count | default(10) }}" min="1" required>
+        </label>
+        <input type="hidden" name="current_customer_display_count" value="{{ customer_count | default(5) }}">
+        <input type="hidden" name="current_customer_display_start" value="{{ customer_start | default(0) }}">
+        <button type="submit">Fetch Initial Customer Batch from QuickBooks</button>
+    </form>
+
+    <a href="{{ url_for('fetch_next_batch_customers_controller', current_customer_display_count=customer_count | default(5), current_customer_display_start=customer_start | default(0)) }}">Fetch Next Customer Batch ({{ last_customer_fetch_count | default(10) }}) from QuickBooks</a>
+    <p>Next QB Customer Start Position: {{ next_qb_customer_start_pos | default('N/A') }}</p>
+    <hr>
+
+    {% if customers and customers|length > 0 %} {# Added a check for non-empty list #}
+    <h2>Showing Customers</h2>
+    <table border="1" cellpadding="5" cellspacing="0">
+        <thead>
+            <tr>
+                <th>QB ID</th>
+                <th>Display Name</th>
+                <th>Company Name</th>
+                <th>Email</th>
+                <th>Phone</th>
+                <th>Balance</th>
+                <th>City</th>
+                <th>Create Time</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for customer in customers %}
+            <tr>
+                <td>{{ customer.customer_id }}</td>
+                <td>{{ customer.display_name }}</td>
+                <td>{{ customer.company_name }}</td>
+                <td>{{ customer.primary_email_addr }}</td>
+                <td>{{ customer.primary_phone_free_form_number }}</td>
+                <td>{{ customer.balance }}</td>
+                <td>{{ customer.bill_addr.city if customer.bill_addr else '' }}</td>
+                <td>{{ customer.customer_metadata_info.create_time.strftime('%Y-%m-%d %H:%M:%S') if customer.customer_metadata_info and customer.customer_metadata_info.create_time else '' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <div class="pagination_customers">
+        {% if customer_has_prev %}
+        <a href="{{ url_for('home_customers', customer_start=customer_start - customer_count, customer_count=customer_count, start=start, count=count) }}">← Prev Customers</a>
+        {% endif %}
+        {% if customer_has_more %}
+        <a href="{{ url_for('home_customers', customer_start=customer_start + customer_count, customer_count=customer_count, start=start, count=count) }}">Next Customers →</a>
+        {% endif %}
+    </div>
+    {% else %}
+    <p>No customers to display. Try fetching some from QuickBooks.</p>
+    {% endif %}
 
 </html>

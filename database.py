@@ -14,7 +14,10 @@ REQUIRED_TABLES = [
     "currencies",
     "bills",
     "bill_metadata",
-    "bill_line_items"
+    "bill_line_items",
+    "customers",
+    "customer_addresses",
+    "customer_metadata"
 ]
 
 def check_tables_exist():

@@ -4,7 +4,7 @@ import requests
 import base64
 from urllib.parse import urlencode
 from sqlalchemy.orm import Session
-from models import Bill, Vendor, VendorAddress, Currency, BillMetaData, BillLineItem
+from models import Bill, Vendor, VendorAddress, Currency, BillMetaData, BillLineItem, Customer, CustomerAddress, CustomerMetaData
 from database import SessionLocal
 from datetime import datetime
 from sqlalchemy.orm import joinedload
@@ -17,8 +17,10 @@ CLIENT_SECRET = "VZD28FlMtQ6K914rMnKAuoA3bd5lSac6M7Ctle65"
 REDIRECT_URI = "http://localhost:5000/callback"
 REALM_ID = "9341454578080950"
 
-QB_NEXT_START_POSITION_KEY = 'qb_next_start_position'
-LAST_FETCH_COUNT_KEY = 'last_fetch_count'
+QB_BILL_NEXT_START_POSITION_KEY = 'qb_bill_next_start_position'
+LAST_BILL_FETCH_COUNT_KEY = 'last_bill_fetch_count'
+QB_CUSTOMER_NEXT_START_POSITION_KEY = 'qb_customer_next_start_position'
+LAST_CUSTOMER_FETCH_COUNT_KEY = 'last_customer_fetch_count'
 
 auth_base_url = "https://appcenter.intuit.com/connect/oauth2"
 token_url = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
@@ -26,40 +28,64 @@ token_url = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
 access_token = None
 
 
+# --- Bill Routes ---
 @app.route("/", methods=["GET", "POST"])
 def home():
     if request.method == "POST":
-        count = request.form.get("count", 5)
-        start = request.form.get("start", 0)
-        return redirect(url_for("home", count=count, start=start))
+        # This POST is for bill pagination settings
+        bill_count = request.form.get("count", 5) # Bill's count
+        bill_start = request.form.get("start", 0) # Bill's start
+        # Preserve customer pagination if present
+        customer_count = request.args.get("customer_count", 5)
+        customer_start = request.args.get("customer_start", 0)
+        return redirect(url_for("home", count=bill_count, start=bill_start, customer_count=customer_count, customer_start=customer_start))
 
-    try:
-        count = int(request.args.get("count", 5))
-    except (ValueError, TypeError):
-        count = 5
+    # Bill pagination (primary for this route)
+    bill_count = int(request.args.get("count", 5))
+    bill_start = int(request.args.get("start", 0))
 
-    try:
-        start = int(request.args.get("start", 0))
-    except (ValueError, TypeError):
-        start = 0
+    # Customer pagination (secondary, but respect its parameters if provided)
+    customer_count = int(request.args.get("customer_count", 5))
+    customer_start = int(request.args.get("customer_start", 0))
 
     db: Session = SessionLocal()
     try:
+        # Load Bill data
         total_bills = db.query(Bill).count()
         bills = db.query(Bill).options(
             joinedload(Bill.vendor),
             joinedload(Bill.currency),
             joinedload(Bill.bill_metadata)
-        ).order_by(Bill.txn_date.desc()).offset(start).limit(count).all()
+        ).order_by(Bill.txn_date.desc()).offset(bill_start).limit(bill_count).all()
+        bill_has_more = (bill_start + bill_count) < total_bills
+        bill_has_prev = bill_start > 0
+        last_bill_fetch_count = session.get(LAST_BILL_FETCH_COUNT_KEY, 10)
 
-        has_more = (start + count) < total_bills
-        has_prev = start > 0
-        last_fetch_count = session.get(LAST_FETCH_COUNT_KEY, 10)
+        # Load Customer data
+        total_customers = db.query(Customer).count()
+        customers = db.query(Customer).options(
+            joinedload(Customer.bill_addr),
+            joinedload(Customer.customer_metadata_info)
+        ).order_by(Customer.display_name).offset(customer_start).limit(customer_count).all()
+        customer_has_more = (customer_start + customer_count) < total_customers
+        customer_has_prev = customer_start > 0
+        last_customer_fetch_count = session.get(LAST_CUSTOMER_FETCH_COUNT_KEY, 10)
 
-        return render_template("index.html", bills=bills, count=count, start=start,
-                               has_more=has_more, has_prev=has_prev,
-                               last_fetch_count=last_fetch_count,
-                               next_qb_start_pos=session.get(QB_NEXT_START_POSITION_KEY))
+        return render_template("index.html", 
+                               bills=bills, 
+                               count=bill_count, 
+                               start=bill_start,
+                               has_more=bill_has_more, 
+                               has_prev=bill_has_prev,
+                               last_fetch_count=last_bill_fetch_count, 
+                               next_qb_bill_start_pos=session.get(QB_BILL_NEXT_START_POSITION_KEY),
+                               customers=customers, 
+                               customer_count=customer_count, 
+                               customer_start=customer_start,
+                               customer_has_more=customer_has_more, 
+                               customer_has_prev=customer_has_prev,
+                               last_customer_fetch_count=last_customer_fetch_count,
+                               next_qb_customer_start_pos=session.get(QB_CUSTOMER_NEXT_START_POSITION_KEY))
     finally:
         db.close()
 
@@ -70,12 +96,12 @@ def initiate_fetch_controller():
     display_count = int(request.form.get("current_display_count", 5))
     display_start = int(request.form.get("current_display_start", 0))
 
-    session[LAST_FETCH_COUNT_KEY] = fetch_count
-    session[QB_NEXT_START_POSITION_KEY] = 1 
+    session[LAST_BILL_FETCH_COUNT_KEY] = fetch_count
+    session[QB_BILL_NEXT_START_POSITION_KEY] = 1 
 
     global access_token
     if not access_token:
-        state_payload = f"{fetch_count}:{1}:{display_count}:{display_start}"
+        state_payload = f"bills:{fetch_count}:{1}:{display_count}:{display_start}"
         return redirect_to_authorization(state_payload)
     
     return redirect(url_for("fetch_and_save_worker", 
@@ -87,15 +113,15 @@ def initiate_fetch_controller():
 
 @app.route("/fetch-next-batch", methods=["GET"])
 def fetch_next_batch_controller():
-    fetch_count = session.get(LAST_FETCH_COUNT_KEY, 10)
-    qb_start_position = session.get(QB_NEXT_START_POSITION_KEY, 1)
+    fetch_count = session.get(LAST_BILL_FETCH_COUNT_KEY, 10)
+    qb_start_position = session.get(QB_BILL_NEXT_START_POSITION_KEY, 1)
     
     display_count = int(request.args.get("current_display_count", 5))
     display_start = int(request.args.get("current_display_start", 0))
 
     global access_token
     if not access_token:
-        state_payload = f"{fetch_count}:{qb_start_position}:{display_count}:{display_start}"
+        state_payload = f"bills:{fetch_count}:{qb_start_position}:{display_count}:{display_start}"
         return redirect_to_authorization(state_payload)
 
     return redirect(url_for("fetch_and_save_worker", 
@@ -220,8 +246,8 @@ def fetch_and_save_worker():
                     bill.bill_metadata = bill_meta
         db.commit()
 
-        session[QB_NEXT_START_POSITION_KEY] = qb_start_position + num_fetched
-        session[LAST_FETCH_COUNT_KEY] = fetch_count 
+        session[QB_BILL_NEXT_START_POSITION_KEY] = qb_start_position + num_fetched
+        session[LAST_BILL_FETCH_COUNT_KEY] = fetch_count 
     finally:
         db.close()
 
@@ -241,10 +267,11 @@ def callback():
 
     try:
         state_parts = state.split(':')
-        fetch_count = int(state_parts[0])
-        qb_start_position = int(state_parts[1])
-        display_count = int(state_parts[2])
-        display_start = int(state_parts[3])
+        entity_type = state_parts[0]
+        fetch_count = int(state_parts[1])
+        qb_start_position = int(state_parts[2])
+        display_count = int(state_parts[3])
+        display_start = int(state_parts[4])
     except (IndexError, ValueError):
         return "Invalid state format", 400
 
@@ -264,11 +291,280 @@ def callback():
     if response.status_code == 200:
         tokens = response.json()
         access_token = tokens["access_token"]
-        return redirect(url_for("fetch_and_save_worker",
-                                fetch_count=fetch_count,
-                                qb_start_position=qb_start_position,
-                                display_count=display_count,
-                                display_start=display_start))
+        if entity_type == "bills":
+            return redirect(url_for("fetch_and_save_worker",
+                                    fetch_count=fetch_count,
+                                    qb_start_position=qb_start_position,
+                                    display_count=display_count,
+                                    display_start=display_start))
+        elif entity_type == "customers":
+            return redirect(url_for("fetch_and_save_customers_worker",
+                                    fetch_count=fetch_count,
+                                    qb_start_position=qb_start_position,
+                                    display_count=display_count,
+                                    display_start=display_start))
+        else:
+            return "Unknown entity type in state", 400
+    
+    return f"Failed to get tokens: {response.text}", 400
+
+
+# --- Customer Routes ---
+@app.route("/customers", methods=["GET", "POST"])
+def home_customers():
+    if request.method == "POST": # For display pagination settings
+        # This POST is for customer pagination settings
+        customer_count = request.form.get("count", 5) # Customer's count
+        customer_start = request.form.get("start", 0) # Customer's start
+        # Preserve bill pagination if present
+        bill_count = request.args.get("count", 5)
+        bill_start = request.args.get("start", 0)
+        return redirect(url_for("home_customers", count=bill_count, start=bill_start, customer_count=customer_count, customer_start=customer_start))
+
+    # Customer pagination (primary for this route)
+    customer_count = int(request.args.get("customer_count", 5)) # Use customer_count for clarity
+    customer_start = int(request.args.get("customer_start", 0)) # Use customer_start
+
+    # Bill pagination (secondary, but respect its parameters if provided)
+    bill_count = int(request.args.get("count", 5)) # 'count' and 'start' from URL for bills
+    bill_start = int(request.args.get("start", 0))
+
+    db: Session = SessionLocal()
+    try:
+        # Load Customer data
+        total_customers = db.query(Customer).count()
+        customers = db.query(Customer).options(
+            joinedload(Customer.bill_addr),
+            joinedload(Customer.customer_metadata_info)
+        ).order_by(Customer.display_name).offset(customer_start).limit(customer_count).all()
+        customer_has_more = (customer_start + customer_count) < total_customers
+        customer_has_prev = customer_start > 0
+        last_customer_fetch_count = session.get(LAST_CUSTOMER_FETCH_COUNT_KEY, 10)
+
+        # Load Bill data
+        total_bills = db.query(Bill).count()
+        bills = db.query(Bill).options(
+            joinedload(Bill.vendor),
+            joinedload(Bill.currency),
+            joinedload(Bill.bill_metadata)
+        ).order_by(Bill.txn_date.desc()).offset(bill_start).limit(bill_count).all()
+        bill_has_more = (bill_start + bill_count) < total_bills
+        bill_has_prev = bill_start > 0
+        last_bill_fetch_count = session.get(LAST_BILL_FETCH_COUNT_KEY, 10)
+
+        return render_template("index.html", 
+                               customers=customers, 
+                               customer_count=customer_count, 
+                               customer_start=customer_start,
+                               customer_has_more=customer_has_more, 
+                               customer_has_prev=customer_has_prev,
+                               last_customer_fetch_count=last_customer_fetch_count,
+                               next_qb_customer_start_pos=session.get(QB_CUSTOMER_NEXT_START_POSITION_KEY),
+                               bills=bills, 
+                               count=bill_count, 
+                               start=bill_start, 
+                               has_more=bill_has_more, 
+                               has_prev=bill_has_prev,
+                               last_fetch_count=last_bill_fetch_count,
+                               next_qb_bill_start_pos=session.get(QB_BILL_NEXT_START_POSITION_KEY))
+    finally:
+        db.close()
+
+@app.route("/initiate-fetch-customers", methods=["POST"])
+def initiate_fetch_customers_controller():
+    fetch_count = int(request.form.get("fetch_customer_count", 10))
+    display_count = int(request.form.get("current_customer_display_count", 5))
+    display_start = int(request.form.get("current_customer_display_start", 0))
+
+    session[LAST_CUSTOMER_FETCH_COUNT_KEY] = fetch_count
+    session[QB_CUSTOMER_NEXT_START_POSITION_KEY] = 1
+
+    global access_token
+    if not access_token:
+        state_payload = f"customers:{fetch_count}:{1}:{display_count}:{display_start}"
+        return redirect_to_authorization(state_payload)
+
+    return redirect(url_for("fetch_and_save_customers_worker",
+                            fetch_count=fetch_count,
+                            qb_start_position=1,
+                            display_count=display_count,
+                            display_start=display_start))
+
+@app.route("/fetch-next-batch-customers", methods=["GET"])
+def fetch_next_batch_customers_controller():
+    fetch_count = session.get(LAST_CUSTOMER_FETCH_COUNT_KEY, 10)
+    qb_start_position = session.get(QB_CUSTOMER_NEXT_START_POSITION_KEY, 1)
+
+    display_count = int(request.args.get("current_customer_display_count", 5))
+    display_start = int(request.args.get("current_customer_display_start", 0))
+
+    global access_token
+    if not access_token:
+        state_payload = f"customers:{fetch_count}:{qb_start_position}:{display_count}:{display_start}"
+        return redirect_to_authorization(state_payload)
+
+    return redirect(url_for("fetch_and_save_customers_worker",
+                            fetch_count=fetch_count,
+                            qb_start_position=qb_start_position,
+                            display_count=display_count,
+                            display_start=display_start))
+
+@app.route("/fetch-and-save-customers-worker")
+def fetch_and_save_customers_worker():
+    # This function will be similar to fetch_and_save_worker but for Customers
+    # It will query 'SELECT * FROM Customer ...'
+    # Parse customer data, create/update Customer, CustomerAddress, CustomerMetaData
+    # And save to DB.
+    global access_token
+    if not access_token:
+        # Redirect to the customer view, preserving current bill pagination if any
+        bill_count = request.args.get("current_display_count", 5) # Assuming this is passed if coming from a bill context
+        bill_start = request.args.get("current_display_start", 0)
+        return redirect(url_for("home_customers", error="Authentication required.", count=bill_count, start=bill_start))
+
+    fetch_count = int(request.args.get("fetch_count"))
+    qb_start_position = int(request.args.get("qb_start_position"))
+    display_count = int(request.args.get("display_count"))
+    display_start = int(request.args.get("display_start"))
+
+    url = f"https://sandbox-quickbooks.api.intuit.com/v3/company/{REALM_ID}/query"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Accept": "application/json",
+        "Content-Type": "application/text"
+    }
+    query = f"SELECT * FROM Customer STARTPOSITION {qb_start_position} MAXRESULTS {fetch_count}"
+    response = requests.post(url, headers=headers, data=query)
+
+    if not response.ok:
+        return f"Failed to fetch customers: {response.text}", 500
+
+    customers_data = response.json().get("QueryResponse", {}).get("Customer", [])
+    num_fetched = len(customers_data)
+
+    db: Session = SessionLocal()
+    try:
+        for c_data in customers_data:
+            qb_customer_id = c_data.get("Id")
+            if not qb_customer_id:
+                continue
+
+            customer = db.query(Customer).filter(Customer.customer_id == qb_customer_id).first()
+
+            if not customer:
+                customer = Customer(customer_id=qb_customer_id)
+                db.add(customer)
+            
+            customer.sync_token = c_data.get("SyncToken")
+            customer.domain = c_data.get("domain")
+            customer.given_name = c_data.get("GivenName")
+            customer.display_name = c_data.get("DisplayName")
+            customer.bill_with_parent = c_data.get("BillWithParent", False)
+            customer.fully_qualified_name = c_data.get("FullyQualifiedName")
+            customer.company_name = c_data.get("CompanyName")
+            customer.family_name = c_data.get("FamilyName")
+            customer.sparse = c_data.get("sparse", False)
+            customer.primary_phone_free_form_number = c_data.get("PrimaryPhone", {}).get("FreeFormNumber")
+            customer.primary_email_addr = c_data.get("PrimaryEmailAddr", {}).get("Address")
+            customer.active = c_data.get("Active", True)
+            customer.job = c_data.get("Job", False)
+            customer.balance_with_jobs = float(c_data.get("BalanceWithJobs", 0))
+            customer.preferred_delivery_method = c_data.get("PreferredDeliveryMethod")
+            customer.taxable = c_data.get("Taxable", False)
+            customer.print_on_check_name = c_data.get("PrintOnCheckName")
+            customer.balance = float(c_data.get("Balance", 0))
+
+            # Address (BillAddr)
+            bill_addr_data = c_data.get("BillAddr")
+            if bill_addr_data:
+                if not customer.bill_addr:
+                    customer.bill_addr = CustomerAddress(qb_address_id=bill_addr_data.get("Id"))
+                
+                customer.bill_addr.line1 = bill_addr_data.get("Line1")
+                customer.bill_addr.city = bill_addr_data.get("City")
+                customer.bill_addr.country_sub_division_code = bill_addr_data.get("CountrySubDivisionCode")
+                customer.bill_addr.postal_code = bill_addr_data.get("PostalCode")
+                customer.bill_addr.lat = bill_addr_data.get("Lat")
+                customer.bill_addr.long = bill_addr_data.get("Long")
+
+            # MetaData
+            meta_data_json = c_data.get("MetaData")
+            if meta_data_json:
+                create_time_str = meta_data_json.get("CreateTime")
+                last_updated_time_str = meta_data_json.get("LastUpdatedTime")
+                parsed_create_time = datetime.fromisoformat(create_time_str.replace("Z", "+00:00")) if create_time_str else None
+                parsed_last_updated_time = datetime.fromisoformat(last_updated_time_str.replace("Z", "+00:00")) if last_updated_time_str else None
+
+                if not customer.customer_metadata_info:
+                    customer.customer_metadata_info = CustomerMetaData()
+                customer.customer_metadata_info.create_time = parsed_create_time
+                customer.customer_metadata_info.last_updated_time = parsed_last_updated_time
+        
+        db.commit()
+        session[QB_CUSTOMER_NEXT_START_POSITION_KEY] = qb_start_position + num_fetched
+        session[LAST_CUSTOMER_FETCH_COUNT_KEY] = fetch_count
+    finally:
+        db.close()
+
+    # When redirecting back to home_customers, ensure bill pagination is also considered
+    # For simplicity, let's assume the bill pagination was not the primary focus of this fetch action
+    # So, we might just redirect to the first page of bills, or try to preserve it if it was in the state.
+    # The display_count and display_start from the worker are for the customers.
+    # We need to decide what the bill pagination should be.
+    return redirect(url_for("home_customers", customer_count=display_count, customer_start=display_start, count=5, start=0)) # Default bill pagination
+
+
+
+@app.route("/callback_old") 
+def callback_old(): # Renamed the function
+    global access_token
+    auth_code = request.args.get("code")
+    state = request.args.get("state")
+
+    if not auth_code:
+        return "No auth code received", 400
+    if not state:
+        return "No state received", 400
+
+    try:
+        state_parts = state.split(':')
+        entity_type = state_parts[0] # "bills" or "customers"
+        fetch_count = int(state_parts[1])
+        qb_start_position = int(state_parts[2])
+        display_count = int(state_parts[3])
+        display_start = int(state_parts[4])
+    except (IndexError, ValueError):
+        return "Invalid state format", 400
+
+    basic_auth = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
+    headers = {
+        "Authorization": f"Basic {basic_auth}",
+        "Accept": "application/json",
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+    data = {
+        "grant_type": "authorization_code",
+        "code": auth_code,
+        "redirect_uri": REDIRECT_URI
+    }
+
+    response = requests.post(token_url, headers=headers, data=urlencode(data))
+    if response.status_code == 200:
+        tokens = response.json()
+        access_token = tokens["access_token"]
+        if entity_type == "bills":
+            return redirect(url_for("fetch_and_save_worker",
+                                    fetch_count=fetch_count,
+                                    qb_start_position=qb_start_position,
+                                    display_count=display_count,
+                                    display_start=display_start))
+        elif entity_type == "customers":
+             return redirect(url_for("fetch_and_save_customers_worker",
+                                    fetch_count=fetch_count,
+                                    qb_start_position=qb_start_position,
+                                    display_count=display_count,
+                                    display_start=display_start))
+        # Add more entity types if needed
     
     return f"Failed to get tokens: {response.text}", 400
 
